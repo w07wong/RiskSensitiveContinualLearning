@@ -35,6 +35,8 @@ parser.add_argument('--dataset', type=str, default='MNIST', help='MNIST|CIFAR100
 parser.add_argument('--processes', type=int, default=1, help='Number of multiprocessing processes.')
 parser.add_argument('--model', type=str, default='MLP', help='MLP|MLPSimple|CNN')
 parser.add_argument('--replay', action='store_true')
+parser.add_argument('--save_dir', type=str, default='', help='Location to save models and training stats.')
+
 
 # @partial(jit, static_argnums=(1,5))
 def apply_model(state, risk_functional, images, labels, task_labels, out_features):
@@ -48,18 +50,22 @@ def apply_model(state, risk_functional, images, labels, task_labels, out_feature
         if reduction is None, then apply aggregate losses per task
         and apply risk functional on each aggregation
         '''
-        task_losses = {task: [] for task in set(task_labels)}
-        if len(task_losses.keys()) > 1:
-            print(task_losses)
-            for i in range(len(loss)):
-                task_losses[task_labels[i]].append(loss[i])
-            task_losses = [np.mean(task_losses[task]) for task in task_losses.keys()]
-            '''Task loss is final loss'''
-            loss = jnp.mean(risk_functionals[risk_functional](task_losses))
-            '''Or, task loss is auxiliary loss'''
-            # loss = 0.5 * (jnp.mean(loss) + jnp.mean(risk_functionals[risk_functional](task_losses)))
-        else:
+        if task_labels is None:
             loss = jnp.mean(loss)
+        else:
+            task_losses = {}
+            for i in range(len(loss)):
+                if task_labels[i] not in task_losses:
+                    task_losses[task_labels[i]] = []
+                task_losses[task_labels[i]].append(loss[i])
+            if len(task_losses.keys()) > 1:
+                losses = jnp.array([jnp.mean(jnp.array(task_losses[task])) for task in task_losses.keys()])
+                '''Task loss is final loss'''
+                # loss = jnp.mean(risk_functionals[risk_functional](losses))
+                '''Or, task loss is auxiliary loss'''
+                loss = 0.5 * (jnp.mean(loss) + jnp.mean(risk_functionals[risk_functional](losses)))
+            else:
+                loss = jnp.mean(loss)
         return loss, logits
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
@@ -154,11 +160,12 @@ def train_and_evaluate(config: argparse.Namespace,
                     replay_images, replay_labels, replay_task_labels = buffer.get_data(config.batch_size)
                     replay_images = np.stack(replay_images, axis=0)
                     replay_labels = np.stack(replay_labels, axis=0)
+                    replay_task_labels = replay_task_labels.tolist() + batch_task_labels
                     state, train_loss, train_accuracy, train_grads = train_epoch(state,
                                                                 risk_functional,
                                                                 jnp.concatenate((batch_images, replay_images)),
                                                                 jnp.concatenate((batch_labels, replay_labels)),
-                                                                jnp.array(batch_task_labels + replay_task_labels, dtype=float),
+                                                                replay_task_labels,
                                                                 out_features)
                 else:
                     state, train_loss, train_accuracy, train_grads = train_epoch(state,
@@ -278,7 +285,7 @@ def train_with_task_order(config, train_dataset, val_dataset, out_features, task
     all_results['all_first_task_losses'] = all_first_task_losses
     all_results['all_first_task_accs'] = all_first_task_accs
     with open(str(task_order) + '.pickle', 'wb') as handle:
-        pickle.dump(all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(config.save_dir + '/' + all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def main():

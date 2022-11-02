@@ -35,6 +35,7 @@ parser.add_argument('--dataset', type=str, default='MNIST', help='MNIST|CIFAR100
 parser.add_argument('--processes', type=int, default=1, help='Number of multiprocessing processes.')
 parser.add_argument('--model', type=str, default='MLP', help='MLP|MLPSimple|CNN')
 parser.add_argument('--replay', action='store_true')
+parser.add_argument('--save_dir', type=str, default='', help='Location to save models and training stats.')
 
 
 # @partial(jit, static_argnums=(1,5))
@@ -284,7 +285,7 @@ def train_with_task_order(config, train_dataset, val_dataset, out_features, task
     all_results['all_first_task_losses'] = all_first_task_losses
     all_results['all_first_task_accs'] = all_first_task_accs
     with open(str(task_order) + '.pickle', 'wb') as handle:
-        pickle.dump(all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(config.save_dir + '/' + all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def main():
