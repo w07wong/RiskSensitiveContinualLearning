@@ -156,7 +156,7 @@ def train_and_evaluate(config: argparse.Namespace,
                 batch_labels = train_labels[perm, ...]
                 batch_task_labels = [task_id for _ in range(len(batch_images))]
 
-                if config.replay and task_id > 0:
+                if config.replay and task_id != task_order[0]:
                     replay_images, replay_labels, replay_task_labels = buffer.get_data(config.batch_size)
                     replay_images = np.stack(replay_images, axis=0)
                     replay_labels = np.stack(replay_labels, axis=0)
@@ -279,13 +279,13 @@ def train_with_task_order(config, train_dataset, val_dataset, out_features, task
             np.max(first_task_accs, axis=0),
             np.min(first_task_accs, axis=0)])
     
-    all_results = dict()
-    all_results['models'] = models
-    all_results['all_last_node_grads'] = all_last_node_grads
-    all_results['all_first_task_losses'] = all_first_task_losses
-    all_results['all_first_task_accs'] = all_first_task_accs
-    with open(config.save_dir + '/' + str(task_order) + '.pickle', 'wb') as handle:
-        pickle.dump(all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        all_results = dict()
+        all_results['models'] = models
+        all_results['all_last_node_grads'] = all_last_node_grads
+        all_results['all_first_task_losses'] = all_first_task_losses
+        all_results['all_first_task_accs'] = all_first_task_accs
+        with open(config.save_dir + '/' + str(task_order) + '.pickle', 'wb') as handle:
+            pickle.dump(all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def main():
@@ -318,7 +318,7 @@ def main():
 if __name__ == '__main__':
     if platform.system() == "Darwin":
         mp.set_start_method('spawn')
-    # cpu_cores = [i for i in range(0, 4)] # Cores (numbered 0-11)
+    # cpu_cores = [i for i in range(0, 1)] # Cores (numbered 0-11)
     # os.system("taskset -pc {} {}".format(",".join(str(i) for i in cpu_cores), os.getpid()))
 
     main()

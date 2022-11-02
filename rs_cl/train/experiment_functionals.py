@@ -10,6 +10,7 @@ from risk_functionals.trimmed_risk import TrimmedRisk
 
 risk_functionals = {
     # 'Human-Aligned Risk a=0.4, b=0.3': lambda losses: HumanAlignedRisk(a=0.4, b=0.3, reduction='none').forward(losses),
+    # 'Expected Value': lambda losses: ExpectedValue(reduction='none').forward(losses),
     'Expected Value': lambda losses: ExpectedValue(reduction='mean').forward(losses),
     # 'CVaR 0.1': lambda losses: CVaR(alpha=0.1, inverted=False).forward(losses),
     'CVaR 0.2': lambda losses: CVaR(alpha=0.2, inverted=False).forward(losses),
