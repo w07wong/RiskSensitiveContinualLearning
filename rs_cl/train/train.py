@@ -284,8 +284,13 @@ def train_with_task_order(config, train_dataset, val_dataset, out_features, task
     all_results['all_last_node_grads'] = all_last_node_grads
     all_results['all_first_task_losses'] = all_first_task_losses
     all_results['all_first_task_accs'] = all_first_task_accs
+<<<<<<< HEAD
     with open(config.save_dir + '/' + str(task_order) + '.pickle', 'wb') as handle:
         pickle.dump(all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
+=======
+    with open(str(task_order) + '.pickle', 'wb') as handle:
+        pickle.dump(config.save_dir + '/' + all_results, handle, protocol=pickle.HIGHEST_PROTOCOL)
+>>>>>>> 77b349ab1d17f0f094b8288d8912844587cb4f1f
 
 
 def main():
