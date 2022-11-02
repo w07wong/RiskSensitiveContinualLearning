@@ -38,7 +38,7 @@ parser.add_argument('--replay', action='store_true')
 parser.add_argument('--save_dir', type=str, default='', help='Location to save models and training stats.')
 
 
-# @partial(jit, static_argnums=(1,5))
+@partial(jit, static_argnums=(1,5))
 def apply_model(state, risk_functional, images, labels, task_labels, out_features):
     """Computes gradients, loss and accuracy for a single batch."""
     def loss_fn(params, out_features):
@@ -50,22 +50,22 @@ def apply_model(state, risk_functional, images, labels, task_labels, out_feature
         if reduction is None, then apply aggregate losses per task
         and apply risk functional on each aggregation
         '''
-        if task_labels is None:
-            loss = jnp.mean(loss)
-        else:
-            task_losses = {}
-            for i in range(len(loss)):
-                if task_labels[i] not in task_losses:
-                    task_losses[task_labels[i]] = []
-                task_losses[task_labels[i]].append(loss[i])
-            if len(task_losses.keys()) > 1:
-                losses = jnp.array([jnp.mean(jnp.array(task_losses[task])) for task in task_losses.keys()])
-                '''Task loss is final loss'''
-                # loss = jnp.mean(risk_functionals[risk_functional](losses))
-                '''Or, task loss is auxiliary loss'''
-                loss = 0.5 * (jnp.mean(loss) + jnp.mean(risk_functionals[risk_functional](losses)))
-            else:
-                loss = jnp.mean(loss)
+        # if task_labels is None:
+        #     loss = jnp.mean(loss)
+        # else:
+        #     task_losses = {}
+        #     for i in range(len(loss)):
+        #         if task_labels[i] not in task_losses:
+        #             task_losses[task_labels[i]] = []
+        #         task_losses[task_labels[i]].append(loss[i])
+        #     if len(task_losses.keys()) > 1:
+        #         losses = jnp.array([jnp.mean(jnp.array(task_losses[task])) for task in task_losses.keys()])
+        #         '''Task loss is final loss'''
+        #         # loss = jnp.mean(risk_functionals[risk_functional](losses))
+        #         '''Or, task loss is auxiliary loss'''
+        #         loss = 0.5 * (jnp.mean(loss) + jnp.mean(risk_functionals[risk_functional](losses)))
+        #     else:
+        #         loss = jnp.mean(loss)
         return loss, logits
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
@@ -318,7 +318,7 @@ def main():
 if __name__ == '__main__':
     if platform.system() == "Darwin":
         mp.set_start_method('spawn')
-    cpu_cores = [i for i in range(0, 4)] # Cores (numbered 0-11)
-    os.system("taskset -pc {} {}".format(",".join(str(i) for i in cpu_cores), os.getpid()))
+    # cpu_cores = [i for i in range(0, 4)] # Cores (numbered 0-11)
+    # os.system("taskset -pc {} {}".format(",".join(str(i) for i in cpu_cores), os.getpid()))
 
     main()
