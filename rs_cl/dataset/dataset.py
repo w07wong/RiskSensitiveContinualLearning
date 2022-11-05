@@ -35,6 +35,7 @@ def MNIST(dataroot, train_aug=False):
         transform=train_transform
     )
     train_dataset = CacheClassLabel(train_dataset)
+    train_images, train_labels = train_dataset
 
     val_dataset = torchvision.datasets.MNIST(
         dataroot,
@@ -42,8 +43,9 @@ def MNIST(dataroot, train_aug=False):
         transform=val_transform
     )
     val_dataset = CacheClassLabel(val_dataset)
+    val_images, val_labels = val_dataset
 
-    return train_dataset, val_dataset
+    return train_images, train_labels, val_images, val_labels
 
 
 def SplitGen(train_dataset, val_dataset, first_split_sz=2, other_split_sz=2, rand_split=False, remap_class=False):

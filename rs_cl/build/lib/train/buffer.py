@@ -2,16 +2,16 @@ import numpy as np
 
 
 class Buffer():
-    '''Adapted from https://github.com/aimagelab/mammoth.'''
-    def __init__(self, buffer_size):
-        self.buffer_size = buffer_size
+    def __init__(self, buffer_max_size):
+        '''
+        Args:
+            buffer_size: maximum number of elements buffer can hold
+        '''
+        self.buffer_max_size = buffer_max_size
+        self.buffer_size = 0
         self.num_seen_examples = 0
-        # self.images = np.array([None for _ in range(buffer_size)])
-        # self.labels = np.array([None for _ in range(buffer_size)])
-        # self.task_labels = np.array([None for _ in range(buffer_size)])
-        self.images = []
-        self.labels = []
-        self.task_labels = []
+        self.buffer_task_ids = []
+        self.buffer_data_ids = []
 
     def len(self):
         return min(self.num_seen_examples, self.buffer_size)
@@ -27,31 +27,29 @@ class Buffer():
         else:
             return -1
 
-    def add_data(self, images, labels=None, task_labels=None):
-        '''Adds data to the memory buffer according to the reservoir strategy.'''
-        for i in range(len(images)):
-            index = self._reservoir(self.num_seen_examples, self.buffer_size)
-            if index >= 0 and index == self.num_seen_examples:
-                self.images.append(np.asarray(images[i]))
-                if labels is not None:
-                    self.labels.append(np.asarray(labels[i]))
-                if task_labels is not None:
-                    self.task_labels.append(task_labels[i])
-            elif index >= 0:
-                self.images[i] = np.asarray(images[i])
-                if labels is not None:
-                    self.labels[i] = np.asarray(labels[i])
-                if task_labels is not None:
-                    self.task_labels.append(task_labels[i])
+    def add_data(self, indices, task_id):
+        '''Add data to the buffer with reservoir sampling.'''
+        # Calculate available space in buffer
+        available_space = self.buffer_max_size - self.buffer_size
+        if available_space > 0:
+            # Fill buffer to brim with available indices
+            self.buffer_task_ids.extend([task_id for _ in range(available_space)])
+            self.buffer_data_ids.extend([indices[i] for i in range(available_space)])
+            self.buffer_size += available_space
+            self.num_seen_examples += available_space
+
+        # Only called when the buffer is full and we have elements in indices not yet added.
+        for elem_idx in range(available_space, len(indices)):
+            candidate_index = self._reservoir(self.num_seen_examples, self.buffer_size)
             self.num_seen_examples += 1
+            if candidate_index > -1:
+                self.buffer_task_ids[candidate_index] = task_id
+                self.buffer_data_ids[candidate_index] = indices[elem_idx]
 
     def get_data(self, size):
-        '''Randomly samples a batch of size items.'''
-        if size > min(self.num_seen_examples, len(self.images)):
-            size = min(self.num_seen_examples, len(self.images))
+        '''Randomly sample a batch of size items.'''
+        if size > self.buffer_size:
+            size = self.buffer_size
 
-        choice = np.random.choice(min(self.num_seen_examples, len(self.images)),
-                                  size=size, replace=False)
-
-        # return self.images[choice], self.labels[choice], self.task_labels[choice]
-        return [self.images[i] for i in choice], [self.labels[i] for i in choice], [self.task_labels[i] for i in choice]
+        random_indices = np.random.choice(self.buffer_size, size=size, replace=False)
+        return np.array(self.buffer_task_ids)[random_indices], np.array(self.buffer_data_ids)[random_indices]

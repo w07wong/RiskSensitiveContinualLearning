@@ -37,34 +37,30 @@ def CIFAR100(dataroot='data', train_aug=False):
         download=True,
         transform=train_transform
     )
-    train_datasets = [[[], []] for _ in range(len(tasks))]
+    train_images = [[] for _ in range(len(tasks))]
+    train_labels = [[] for _ in range(len(tasks))]
     for image, label in train_data:
         class_name = train_data.classes[label]
         for i, task in enumerate(tasks):
             if class_name in task:
-                train_datasets[i][0].append(image)
-                train_datasets[i][1].append(sparse2coarse(label))
+                train_images[i].append(image)
+                train_labels[i].append(sparse2coarse(label))
 
     val_data = torchvision.datasets.CIFAR100(
         root=dataroot,
         train=False,
         transform=val_transform
     )
-    val_datasets = [[[], []] for _ in range(len(tasks))]
+    val_images = [[] for _ in range(len(tasks))]
+    val_labels = [[] for _ in range(len(tasks))]
     for image, label in val_data:
         class_name = val_data.classes[label]
         for i, task in enumerate(tasks):
             if class_name in task:
-                val_datasets[i][0].append(image)
-                val_datasets[i][1].append(sparse2coarse(label))
+                val_images[i].append(image)
+                val_labels[i].append(sparse2coarse(label))
 
-    for i in range(len(train_datasets)):
-        train_datasets[i][0] = jnp.array(train_datasets[i][0])
-        train_datasets[i][1] = jnp.array(train_datasets[i][1])
-    for i in range(len(val_datasets)):
-        val_datasets[i][0] = jnp.array(val_datasets[i][0])
-        val_datasets[i][1] = jnp.array(val_datasets[i][1])
-    return train_datasets, val_datasets
+    return jnp.array(train_images), jnp.array(train_labels), jnp.array(val_images), jnp.array(val_labels) 
 
 def sparse2coarse(targets):
     """Convert Pytorch CIFAR100 sparse targets to coarse targets.

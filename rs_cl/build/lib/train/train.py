@@ -106,8 +106,10 @@ def train_epoch(state, batch_stats, risk_functional, images, labels, task_labels
 
 
 def train_and_evaluate(config: argparse.Namespace,
-                       train_dataset,
-                       val_dataset,
+                       train_images,
+                       train_labels,
+                       val_images,
+                       val_labels,
                        risk_functional,
                        state,
                        task_order,
@@ -117,8 +119,10 @@ def train_and_evaluate(config: argparse.Namespace,
     """Execute model training and evaluation loop.
     Args:
         config: Hyperparameter configuration for training and evaluation.
-        train_dataset: list of lists containing training images and training labels
-        val_dataset: list of lists containing validation images and validation labels
+        train_images: NumPy array of training images separated by task
+        train_labels: NumPy array of training labels separated by task
+        val_images: NumPy array of validation images separated by task
+        val_labels: NumPy array of validation labels separated by task
         risk_functional: Risk functional to transform losses.
         state: Model state.
         task_order: ordering of tasks by id. e.g. [1, 2, 3, 4] or [3, 1, 4, 2]
@@ -148,13 +152,14 @@ def train_and_evaluate(config: argparse.Namespace,
     for task_id in task_order:
         logging.info('==================Task {}==================='.format(task_id + 1))
 
-        train_images, train_labels = train_dataset[task_id]
-        val_images, val_labels = val_dataset[task_id]
+        task_train_images, task_train_labels = train_images[task_id], train_labels[task_id]
+        task_val_images, task_val_labels = val_images[task_id], val_labels[task_id]
 
         # Shuffle dataset
-        train_ds_size = len(train_images)
+        train_ds_size = len(task_train_images)
         batches_per_epoch = int(math.ceil(train_ds_size / config.batch_size))
-        permutations = np.random.permutation(train_ds_size)
+        permutations = jax.random.permutation(rng, train_ds_size)
+        print(train_ds_size)
 
         epoch = 0
         last_layer_grads[task_id] = []
@@ -166,22 +171,22 @@ def train_and_evaluate(config: argparse.Namespace,
                 # Get batch data
                 start_idx = b * config.batch_size
                 end_idx = min(start_idx + config.batch_size, len(permutations))
-                batch_images = train_images[start_idx:end_idx, ...]
-                batch_labels = train_labels[start_idx:end_idx, ...]
+                indices = permutations[start_idx:end_idx]
+                batch_images = task_train_images[indices, ...]
+                batch_labels = task_train_labels[indices, ...]
                 batch_task_labels = [task_id for _ in range(len(batch_images))]
 
                 if config.replay and task_id != task_order[0]:
-                    replay_images, replay_labels, replay_task_labels = buffer.get_data(config.batch_size)
-                    replay_images = jnp.stack(replay_images, axis=0)
-                    replay_labels = jnp.stack(replay_labels, axis=0)
-                    replay_task_labels = replay_task_labels + batch_task_labels
+                    replay_task_ids, replay_data_ids = buffer.get_data(batch_images.shape[0])
+                    replay_images = train_images[replay_task_ids, replay_data_ids]
+                    replay_labels = train_labels[replay_task_ids, replay_data_ids]
                     state, train_grads, train_loss, train_accuracy, batch_stats = train_epoch(
                         state,
                         batch_stats,
                         risk_functional,
                         jnp.concatenate((batch_images, replay_images)),
                         jnp.concatenate((batch_labels, replay_labels)),
-                        replay_task_labels,
+                        batch_task_labels + replay_task_ids,
                         out_features)
                 else:
                     state, train_grads, train_loss, train_accuracy, batch_stats = train_epoch(
@@ -201,17 +206,18 @@ def train_and_evaluate(config: argparse.Namespace,
                 batch_accs.append(train_accuracy)
 
                 if config.replay:
-                    buffer.add_data(batch_images, labels=batch_labels, task_labels=batch_task_labels)
+                    buffer.add_data(indices, task_id)
+                    # buffer.add_data(batch_images, labels=batch_labels, task_labels=batch_task_labels)
 
                 # Save last layer gradients w.r.t. loss of first task
-                # first_task_val_images, first_task_val_labels = val_dataset[task_order[0]]
+                # first_task_val_images, first_task_val_labels = val_images[task_order[0]], val_labels[task_order[0]]
                 # first_task_val_grads, _, _, _ = apply_model(
                 #     state, batch_stats, 'Expected Value', first_task_val_images, first_task_val_labels, eval=True)
                 # last_layer_grads[task_id].append(
                 #     (train_grads['Dense_1'], first_task_val_grads['Dense_1']))
 
             _, val_loss, val_accuracy, _ = apply_model(
-                state, batch_stats, 'Expected Value', val_images, val_labels, None, out_features, eval=True)
+                state, batch_stats, 'Expected Value', task_val_images, task_val_labels, None, out_features, eval=True)
             all_val_accs.append(val_accuracy)
 
             logging.info(
@@ -224,7 +230,7 @@ def train_and_evaluate(config: argparse.Namespace,
                 first_task_losses.append(val_loss)
                 first_task_accs.append(val_accuracy * 100)
             if task_id > 0:
-                first_task_val_images, first_task_val_labels = val_dataset[task_order[0]]
+                first_task_val_images, first_task_val_labels = val_images[task_order[0]], val_labels[task_order[0]]
                 _, first_task_val_loss, first_task_val_accuracy, _ = apply_model(
                     state, batch_stats, 'Expected Value', first_task_val_images,
                     first_task_val_labels, None, out_features, eval=True)
@@ -245,7 +251,7 @@ def train_and_evaluate(config: argparse.Namespace,
     return state, first_task_losses, first_task_accs, last_layer_grads, all_train_accs, all_val_accs
 
 
-def train_with_task_order(config, train_dataset, val_dataset, out_features, task_order):
+def train_with_task_order(config, train_images, train_labels, val_images, val_labels, out_features, task_order):
     print('Task order: {}'.format(task_order))
     models = dict()
     all_last_node_grads = dict()
@@ -265,22 +271,22 @@ def train_with_task_order(config, train_dataset, val_dataset, out_features, task
             batch_stats = None
             if config.model == 'MLP':
                 model = MLP(out_features=out_features)
-                first_image_shape = train_dataset[0][0][0].shape
+                first_image_shape = train_images[0][0].shape
                 params = model.init(rng, jnp.ones([1, np.prod(first_image_shape)]))['params']
             elif config.model == 'MLPSimple':
                 model = MLPSimple(out_features=out_features)
-                first_image_shape = train_dataset[0][0][0].shape
+                first_image_shape = train_images[0][0].shape
                 params = model.init(rng, jnp.ones([1, np.prod(first_image_shape)]))['params']
             elif config.model == 'CNN':
                 model = CNN(train=True, out_features=out_features)
-                first_image_shape = train_dataset[0][0][0].shape
+                first_image_shape = train_images[0][0].shape
                 vars_initialized = model.init(rng, jnp.ones(
                     [1, first_image_shape[0], first_image_shape[1], first_image_shape[2]]))
                 params = vars_initialized['params']
                 # batch_stats = vars_initialized['batch_stats']
             elif config.model == 'ResNet18':
                 model = ResNet18(n_classes=20)
-                first_image_shape = train_dataset[0][0][0].shape
+                first_image_shape = train_images[0][0].shape
                 vars_initialized = model.init(rng, jnp.ones(
                     [1, first_image_shape[0], first_image_shape[1], first_image_shape[2]]))
                 params = vars_initialized['params']
@@ -291,8 +297,10 @@ def train_with_task_order(config, train_dataset, val_dataset, out_features, task
 
             state, losses, accs, grads, train_accs, val_accs = train_and_evaluate(
                                                                 config,
-                                                                train_dataset,
-                                                                val_dataset,
+                                                                train_images,
+                                                                train_labels,
+                                                                val_images,
+                                                                val_labels,
                                                                 risk_functional,
                                                                 state,
                                                                 task_order,
@@ -334,28 +342,30 @@ def main():
 
     # Create datasets
     if args.dataset == 'MNIST':
-        train_dataset, val_dataset = MNIST()
+        train_images, train_labels, val_images, val_labels = MNIST()
         out_features = 2
     elif args.dataset == 'CIFAR100':
-        train_dataset, val_dataset = CIFAR100(train_aug=True)
+        train_images, train_labels, val_images, val_labels = CIFAR100(train_aug=True)
         out_features = 20
     else:
         raise Exception('Dataset does not exist.')
 
     # Create task orderings
     np.random.seed(0)
-    task_orders = [[i for i in range(len(train_dataset))]]
+    task_orders = [[i for i in range(len(train_images))]]
     for _ in range(args.task_permutations - 1):
-        new_order = [i for i in range(len(train_dataset))]
+        new_order = [i for i in range(len(train_images))]
         np.random.shuffle(new_order)
         task_orders.append(new_order)
     
     for task_order in task_orders:
-        train_with_task_order(args, train_dataset, val_dataset, out_features, task_order)
+        train_with_task_order(
+            args, train_images, train_labels, val_images, val_labels, out_features, task_order)
 
     # # Spawn training process
     # pool = mp.Pool(processes=args.processes)
-    # func = partial(train_with_task_order, args, train_dataset, val_dataset, out_features)
+    # func = partial(
+    #         train_with_task_order, args, train_images, train_labels, val_images, val_labels, out_features)
     # pool.map(func, task_orders)
 
 
