@@ -142,6 +142,7 @@ def train_and_evaluate(config: argparse.Namespace,
 
     # Check to see if nan is encountered during training. If so, end training early.
     nan_encountered = False
+    nan_counter = 0
 
     rng = jax.random.PRNGKey(random_seed)
 
@@ -198,8 +199,10 @@ def train_and_evaluate(config: argparse.Namespace,
                         out_features)
 
                 if math.isnan(train_loss) or math.isnan(train_accuracy):
-                    nan_encountered = True
-                    break
+                    nan_counter += 1
+                    if nan_counter > 20:
+                        nan_encountered = True
+                        break
 
                 batch_losses.append(train_loss)
                 batch_accs.append(train_accuracy)
@@ -224,10 +227,10 @@ def train_and_evaluate(config: argparse.Namespace,
                     val_loss, val_accuracy * 100))
             all_train_accs.append(np.mean(batch_accs))
 
-            if task_id == 0:
+            if task_id == task_order[0]:
                 first_task_losses.append(val_loss)
                 first_task_accs.append(val_accuracy * 100)
-            if task_id > 0:
+            if task_id != task_order[0]:
                 first_task_val_images, first_task_val_labels = val_images[task_order[0]], val_labels[task_order[0]]
                 _, first_task_val_loss, first_task_val_accuracy, _ = apply_model(
                     state, batch_stats, 'Expected Value', first_task_val_images,
@@ -246,7 +249,7 @@ def train_and_evaluate(config: argparse.Namespace,
         if nan_encountered:
             break
 
-    return state, first_task_losses, first_task_accs, last_layer_grads, all_train_accs, all_val_accs
+    return state, first_task_losses, first_task_accs, last_layer_grads, all_train_accs, all_val_accs, nan_encountered
 
 
 def train_with_task_order(config, train_images, train_labels, val_images, val_labels, out_features, task_order):
@@ -293,7 +296,7 @@ def train_with_task_order(config, train_images, train_labels, val_images, val_la
                 raise Exception('Model type does not exist.')
             state = create_train_state(model, params, config)
 
-            state, losses, accs, grads, train_accs, val_accs = train_and_evaluate(
+            state, losses, accs, grads, train_accs, val_accs, has_nan = train_and_evaluate(
                                                                 config,
                                                                 train_images,
                                                                 train_labels,
@@ -305,10 +308,11 @@ def train_with_task_order(config, train_images, train_labels, val_images, val_la
                                                                 out_features,
                                                                 i,
                                                                 batch_stats=batch_stats)
-            first_task_losses.append(losses)
-            first_task_accs.append(accs)
-            last_node_grads.append(grads)
-            models[risk_functional][i] = (state.params, losses, accs, grads, train_accs, val_accs)
+            if not has_nan:
+                first_task_losses.append(losses)
+                first_task_accs.append(accs)
+                last_node_grads.append(grads)
+                models[risk_functional][i] = (state.params, losses, accs, grads, train_accs, val_accs)
 
         all_last_node_grads[risk_functional] = list(last_node_grads)
         all_first_task_losses.append([
