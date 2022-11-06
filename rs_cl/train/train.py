@@ -172,23 +172,25 @@ def train_and_evaluate(config: argparse.Namespace,
                 start_idx = b * config.batch_size
                 end_idx = min(start_idx + config.batch_size, len(permutations))
                 indices = permutations[start_idx:end_idx]
-                batch_images = task_train_images[indices, ...]
-                batch_labels = task_train_labels[indices, ...]
-                batch_task_labels = [task_id for _ in range(len(batch_images))]
+                batch_task_labels = [task_id for _ in range(len(indices))]
 
                 if config.replay and task_id != task_order[0]:
                     replay_task_ids, replay_data_ids = buffer.get_data(batch_images.shape[0])
+                    replay_task_ids = jnp.append(replay_task_ids, batch_task_labels)
+                    replay_data_ids = jnp.append(replay_data_ids, indices)
                     replay_images = train_images[replay_task_ids, replay_data_ids]
                     replay_labels = train_labels[replay_task_ids, replay_data_ids]
                     state, train_grads, train_loss, train_accuracy, batch_stats = train_epoch(
                         state,
                         batch_stats,
                         risk_functional,
-                        jnp.concatenate((batch_images, replay_images)),
-                        jnp.concatenate((batch_labels, replay_labels)),
-                        batch_task_labels + replay_task_ids,
+                        replay_images,
+                        replay_labels,
+                        replay_task_ids,
                         out_features)
                 else:
+                    batch_images = task_train_images[indices, ...]
+                    batch_labels = task_train_labels[indices, ...]
                     state, train_grads, train_loss, train_accuracy, batch_stats = train_epoch(
                         state,
                         batch_stats,
